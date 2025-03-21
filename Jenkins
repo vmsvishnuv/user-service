@@ -1,0 +1,41 @@
+pipeline {
+    agent any
+
+    tools {
+        jdk 'JDK17'   // Make sure this matches the JDK in Jenkins
+        maven 'Maven3' // This should match your Maven installation in Jenkins
+    }
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'mvn clean package'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh 'mvn test'
+            }
+        }
+
+        stage('Package Artifact') {
+            steps {
+                archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+            }
+        }
+
+        stage('Deploy (Optional)') {
+            steps {
+                echo 'Deploying application...'
+                // Add deployment script here (Docker, AWS, etc.)
+            }
+        }
+    }
+}

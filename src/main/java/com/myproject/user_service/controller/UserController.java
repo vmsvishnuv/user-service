@@ -41,33 +41,35 @@ public class UserController {
     @ApiResponse(responseCode = "200", description = "User Found")
     @ApiResponse(responseCode = "404", description = "User NOT Found")
     public UserDTO fetchUserByUserID(@PathVariable String userID){
-
-        return userService.fetchUserByUserID(userID);
+        UserDTO result = userService.fetchUserByUserID(userID);
+        return result;
     }
 
     @PutMapping("updateUserDetails/{userID}")
     @Operation(summary = "Update User", description = "Update specific User details based on UserID")
     public String updateEmailForUserID(@PathVariable String userID, @RequestBody UserDTO userDTO){
-
-        return userService.updateUser(userID, userDTO);
+        String result = userService.updateUser(userID, userDTO);
+        return result;
     }
 
     @DeleteMapping("deleteUser/{userID}")
     @Operation(summary = "Delete User", description = "Delete a user based on UserID")
     public String deleteUser(@PathVariable String userID){
-        return userService.deleteUser(userID);
+        String result = userService.deleteUser(userID);
+        return result;
     }
 
     @GetMapping("/{userID}")
     @Operation(summary = "Validate User", description = "Validate user based on UserID", deprecated = true)
     public Boolean validateUser(@PathVariable String userID){
-        return userService.validateUser(userID);
+        Boolean result = userService.validateUser(userID);
+        return result;
     }
 
     @GetMapping("/getOrders/{userID}")
     @Operation(summary = "Get Orders For User", description = "Get all Orders or Purchased made by User based on UserID")
     public List<PurchaseOrdersDTO> getOrdersForUser(@PathVariable String userID){
-
-        return userService.getOrdersForUser(userID);
+        List<PurchaseOrdersDTO> result = userService.getOrdersForUser(userID);
+        return result;
     }
 }
