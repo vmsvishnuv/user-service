@@ -5,10 +5,18 @@ spring:
   application:
     name: user-service
 
+  cloud:
+    aws:
+      secretsmanager:
+        enabled: true
+        region: us-east-1
+    config:
+      import: aws-secretsmanager:rds!db-1e6ecd14-b345-43ee-9e7d-2b2eda2d9792
+
   datasource:
-    url: jdbc:postgresql://localhost:5432/MyProject_DB
-    username: postgres
-    password: password
+    url: jdbc:postgresql://${spring.datasource.host}:${spring.datasource.port}/${spring.datasource.dbname}
+    username: ${spring.datasource.username}
+    password: ${spring.datasource.password}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
