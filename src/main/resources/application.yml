@@ -5,18 +5,10 @@ spring:
   application:
     name: user-service
 
-  cloud:
-    aws:
-      secretsmanager:
-        enabled: true
-        region: us-east-1
-    config:
-      import: aws-secretsmanager:rds!db-1e6ecd14-b345-43ee-9e7d-2b2eda2d9792
-
   datasource:
-    url: jdbc:postgresql://${spring.datasource.host}:${spring.datasource.port}/${spring.datasource.dbname}
-    username: ${spring.datasource.username}
-    password: ${spring.datasource.password}
+    url: jdbc:postgresql://user-service-db.cen6mm82657u.us-east-1.rds.amazonaws.com
+    username: postgres
+    password: xQDZ7OI8o0~l(zzjL#]oXrXuQDmV
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:

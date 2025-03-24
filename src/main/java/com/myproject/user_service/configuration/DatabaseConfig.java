@@ -19,7 +19,7 @@ public class DatabaseConfig {
     @Value("${aws.secret.name}")
     private String secretName;
 
-    @Bean
+/*    @Bean
     public DataSource dataSource() throws JsonProcessingException {
         AWSSecretsManager client = AWSSecretsManagerClientBuilder.defaultClient();
 
@@ -39,5 +39,5 @@ public class DatabaseConfig {
         ds.setPassword(json.get("password").asText());
 
         return ds;
-    }
+    }*/
 }
