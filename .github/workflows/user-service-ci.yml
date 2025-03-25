@@ -1,0 +1,17 @@
+name: Build Docker Image
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout code
+      - uses: actions/checkout@v4
+
+      # Build Docker image
+      - name: Build
+        run: docker build -t user-service .
