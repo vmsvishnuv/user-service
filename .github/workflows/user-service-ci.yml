@@ -30,6 +30,15 @@ jobs:
           docker tag user-service:latest ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
           docker push ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
 
+
+      # -- Verify key format before SSH Test
+      - name: Verify Key Format
+        run: |
+          echo "Key content (first 3 chars): ${SECRET_KEY:0:3}"
+          echo "Key length: ${#SECRET_KEY}"
+        env:
+          SECRET_KEY: ${{ secrets.EC2_SSH_KEY }}
+
       # --- Pre-Deployment Connection Test ---
       - name: Test SSH Connection to EC2
         run: |
