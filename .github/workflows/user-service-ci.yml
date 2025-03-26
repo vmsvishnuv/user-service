@@ -30,25 +30,33 @@ jobs:
           docker tag user-service:latest ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
           docker push ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
 
+      # --- Network Diagnostics ---
+      - name: Test Network Connectivity
+        run: |
+          echo "Testing connection to ${{ secrets.EC2_IP }}:22"
+          nc -zv -w 5 ${{ secrets.EC2_IP }} 22 || echo "Connection failed"
+          ping -c 3 ${{ secrets.EC2_IP }}
 
-      # -- Verify key format before SSH Test
+      # --- SSH Key Verification ---
       - name: Verify Key Format
         run: |
-          echo "Key content (first 3 chars): ${SECRET_KEY:0:3}"
-          echo "Key length: ${#SECRET_KEY}"
-        env:
-          SECRET_KEY: ${{ secrets.EC2_SSH_KEY }}
+          echo "${{ secrets.EC2_SSH_KEY }}" > key.pem
+          chmod 600 key.pem
+          echo "Key starts with: $(head -c 20 key.pem)"
+          echo "Key ends with: $(tail -c 20 key.pem)"
+          echo "Key length: $(wc -c < key.pem) bytes"
 
-      # --- Pre-Deployment Connection Test ---
+      # --- SSH Connection Test ---
       - name: Test SSH Connection to EC2
         run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          ssh-keyscan ${{ secrets.EC2_IP }} >> ~/.ssh/known_hosts
-          ssh -i <(echo "${{ secrets.EC2_SSH_KEY }}") \
+          echo "${{ secrets.EC2_SSH_KEY }}" > key.pem
+          chmod 600 key.pem
+          ssh-keyscan -H ${{ secrets.EC2_IP }} >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -v -i key.pem \
             -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            ec2-user@${{ secrets.EC2_IP }} "echo 'SSH connection successful!'; docker --version"
+            -o ConnectTimeout=30 \
+            ec2-user@${{ secrets.EC2_IP }} \
+            "echo 'SSH success!'; docker ps"
 
       # --- CD: Deploy to EC2 ---
       - name: Deploy to EC2
@@ -78,3 +86,28 @@ jobs:
               -e SPRING_DATASOURCE_PASSWORD="${{ secrets.DB_PASSWORD }}" \
               -p 8080:8080 \
               ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
+
+      # --- Fallback: Alternative Deployment ---
+      - name: Deploy via SSH Agent (Fallback)
+        if: ${{ failure() }}
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Deploy via SSH Agent
+        if: ${{ failure() }}
+        run: |
+          ssh -v ec2-user@${{ secrets.EC2_IP }} << 'EOF'
+            aws ecr get-login-password --region us-east-1 | \
+              docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+            docker pull ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
+            docker stop user-service || true
+            docker rm user-service || true
+            docker run -d \
+              --name user-service \
+              -e SPRING_DATASOURCE_URL="jdbc:postgresql://user-service-db.cen6mm82657u.us-east-1.rds.amazonaws.com:5432/user_service_db" \
+              -e SPRING_DATASOURCE_USERNAME="app_user" \
+              -e SPRING_DATASOURCE_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+              -p 8080:8080 \
+              ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
+          EOF
