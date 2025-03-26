@@ -1,17 +1,57 @@
-name: Build Docker Image
+name: Build and Deploy to AWS
+
 on:
   push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
+    branches: [ "main" ]
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      # Checkout code
-      - uses: actions/checkout@v4
+      # --- CI: Build and Push to ECR ---
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # Build Docker image
-      - name: Build
-        run: docker build -t user-service .
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push to Amazon ECR
+        id: build-image
+        run: |
+          docker build -t user-service .
+          docker tag user-service:latest ${{ steps.login-ecr.outputs.registry }}/user-service:latest
+          docker push ${{ steps.login-ecr.outputs.registry }}/user-service:latest
+
+      # --- CD: Deploy to EC2 ---
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_IP }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+          # Pull the latest image from ECR
+            aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+            docker pull ${{ steps.login-ecr.outputs.registry }}/user-service:latest
+
+            # Stop and remove old container (if exists)
+            docker stop user-service || true
+            docker rm user-service || true
+
+            # Run new container
+            docker run -d \
+              --name user-service \
+              -e SPRING_PROFILES_ACTIVE=aws \
+              -e DB_URL="${{ secrets.DB_URL }}" \
+              -e DB_USER="app_user" \
+              -e DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+              -p 8080:8080 \
+              ${{ steps.login-ecr.outputs.registry }}/user-service:latest
