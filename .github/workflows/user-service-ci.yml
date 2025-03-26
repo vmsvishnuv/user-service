@@ -27,8 +27,8 @@ jobs:
         id: build-image
         run: |
           docker build -t user-service .
-          docker tag user-service:latest ${{ steps.login-ecr.outputs.registry }}/user-service:latest
-          docker push ${{ steps.login-ecr.outputs.registry }}/user-service:latest
+          docker tag user-service:latest ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
+          docker push ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
 
       # --- CD: Deploy to EC2 ---
       - name: Deploy to EC2 via SSH
@@ -40,7 +40,7 @@ jobs:
           script: |
             # Pull the latest image from ECR
             aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
-            docker pull ${{ steps.login-ecr.outputs.registry }}/user-service:latest
+            docker pull ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
 
             # Stop and remove old container (if exists)
             docker stop user-service || true
@@ -54,4 +54,4 @@ jobs:
               -e DB_USER="app_user" \
               -e DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
               -p 8080:8080 \
-              ${{ steps.login-ecr.outputs.registry }}/user-service:latest
+              ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
