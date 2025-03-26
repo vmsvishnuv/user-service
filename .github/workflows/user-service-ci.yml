@@ -50,7 +50,7 @@ jobs:
             docker run -d \
               --name user-service \
               -e SPRING_PROFILES_ACTIVE=aws \
-              -e DB_URL="${{ secrets.DB_URL }}" \
+              -e DB_URL="jdbc:postgresql://user-service-db.cen6mm82657u.us-east-1.rds.amazonaws.com:5432/user_service_db" \
               -e DB_USER="app_user" \
               -e DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
               -p 8080:8080 \
