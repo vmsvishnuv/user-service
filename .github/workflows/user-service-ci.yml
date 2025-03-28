@@ -1,4 +1,4 @@
-name: Docker CI/CD to AWS
+name: User-service Docker Image CI/CD to AWS
 
 on:
   push:
