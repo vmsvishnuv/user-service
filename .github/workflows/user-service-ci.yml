@@ -1,64 +1,64 @@
-name: Build and Deploy to AWS
+name: Docker CI/CD to AWS
 
 on:
   push:
-    branches: [ "master" ]
+    branches:
+      - master
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
-      # --- CI: Build and Push to ECR ---
-      - name: Checkout code
+      # 1. Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      # 2. Configure AWS
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+      # 3. Login to ECR
+      - name: ECR Login
+        uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build, tag, and push to Amazon ECR
-        id: build-image
+      # 4. Build and Push
+      - name: Build and Push
         run: |
-          docker build -t user-service .
-          docker tag user-service:latest ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
-          docker push ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
+          docker build -t ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }} .
+          docker push ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+          
+          # Optional: Tag as 'latest'
+          docker tag ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }} ${{ secrets.ECR_REPOSITORY }}:latest
+          docker push ${{ secrets.ECR_REPOSITORY }}:latest
 
-      # --- Network Diagnostics ---
-      - name: Test Network Connectivity
+      # 5. Check EC2 Connectivity
+      - name: Check EC2 SSH Access
         run: |
-          echo "Testing connection to ${{ secrets.EC2_IP }}:22"
-          nc -zv -w 5 ${{ secrets.EC2_IP }} 22 || echo "Connection failed"
-          ping -c 3 ${{ secrets.EC2_IP }}
+          echo "Testing connection to EC2..."
+          if ! nc -zv -w 10 ${{ secrets.EC2_IP }} 22; then
+            echo "❌ ERROR: Cannot connect to EC2 on port 22"
+            echo "Check:"
+            echo "1. Security group allows GitHub's IP (192.30.252.0/22)"
+            echo "2. EC2 has a public IP"
+            echo "3. SSH service is running (sudo systemctl status sshd)"
+            exit 1
+          fi
+          echo "✅ EC2 is reachable!"
 
-      # --- SSH Key Verification ---
-      - name: Verify Key Format
+      - name: Debug Secrets
         run: |
-          echo "${{ secrets.EC2_SSH_KEY }}" > key.pem
-          chmod 600 key.pem
-          echo "Key starts with: $(head -c 20 key.pem)"
-          echo "Key ends with: $(tail -c 20 key.pem)"
-          echo "Key length: $(wc -c < key.pem) bytes"
+          echo "EC2_IP: ${{ secrets.EC2_IP }}"
+          echo "EC2_SSH_KEY length: ${#SECRET_SSH_KEY}" 
+          echo "First 10 chars of key: ${SECRET_SSH_KEY:0:10}"
+        env:
+          SECRET_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
 
-      # --- SSH Connection Test ---
-      - name: Test SSH Connection to EC2
-        run: |
-          echo "${{ secrets.EC2_SSH_KEY }}" > key.pem
-          chmod 600 key.pem
-          ssh-keyscan -H ${{ secrets.EC2_IP }} >> ~/.ssh/known_hosts 2>/dev/null
-          ssh -v -i key.pem \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=30 \
-            ec2-user@${{ secrets.EC2_IP }} \
-            "echo 'SSH success!'; docker ps"
-
-      # --- CD: Deploy to EC2 ---
+      # 6. Deploy to EC2
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1
         with:
@@ -66,48 +66,11 @@ jobs:
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
-          timeout: 60s
+          timeout: 30s
+          script_timeout: 5m
           script: |
-            # Pull Docker image
-            aws ecr get-login-password --region us-east-1 | \
-              docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
-
-            docker pull ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
-
-            # Stop old container
-            docker stop user-service || true
-            docker rm user-service || true
-
-            # Run new container with DB config
-            docker run -d \
-              --name user-service \
-              -e SPRING_DATASOURCE_URL="jdbc:postgresql://user-service-db.cen6mm82657u.us-east-1.rds.amazonaws.com:5432/user_service_db" \
-              -e SPRING_DATASOURCE_USERNAME="app_user" \
-              -e SPRING_DATASOURCE_PASSWORD="${{ secrets.DB_PASSWORD }}" \
-              -p 8080:8080 \
-              ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
-
-      # --- Fallback: Alternative Deployment ---
-      - name: Deploy via SSH Agent (Fallback)
-        if: ${{ failure() }}
-        uses: webfactory/ssh-agent@v0.7.0
-        with:
-          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
-
-      - name: Deploy via SSH Agent
-        if: ${{ failure() }}
-        run: |
-          ssh -v ec2-user@${{ secrets.EC2_IP }} << 'EOF'
-            aws ecr get-login-password --region us-east-1 | \
-              docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
-            docker pull ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
-            docker stop user-service || true
-            docker rm user-service || true
-            docker run -d \
-              --name user-service \
-              -e SPRING_DATASOURCE_URL="jdbc:postgresql://user-service-db.cen6mm82657u.us-east-1.rds.amazonaws.com:5432/user_service_db" \
-              -e SPRING_DATASOURCE_USERNAME="app_user" \
-              -e SPRING_DATASOURCE_PASSWORD="${{ secrets.DB_PASSWORD }}" \
-              -p 8080:8080 \
-              ${{ steps.login-ecr.outputs.registry }}/myproject/user-service:latest
-          EOF
+            # Use secrets.ECR_REPOSITORY (not env) for consistency
+            docker pull ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+            docker stop my-app || true
+            docker rm my-app || true
+            docker run -d -p 80:8080 --name my-app ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
