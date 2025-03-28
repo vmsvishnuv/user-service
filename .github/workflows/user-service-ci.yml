@@ -31,15 +31,32 @@ jobs:
         run: |
           docker build -t ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }} .
           docker push ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+          
+          # Optional: Tag as 'latest'
           docker tag ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }} ${{ secrets.ECR_REPOSITORY }}:latest
           docker push ${{ secrets.ECR_REPOSITORY }}:latest
 
-      # 5. Prepare SSH Key
-      - name: Create SSH Key File
+      # 5. Check EC2 Connectivity
+      - name: Check EC2 SSH Access
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
-          chmod 600 ~/.ssh/ec2_key
+          echo "Testing connection to EC2..."
+          if ! nc -zv -w 10 ${{ secrets.EC2_IP }} 22; then
+            echo "❌ ERROR: Cannot connect to EC2 on port 22"
+            echo "Check:"
+            echo "1. Security group allows GitHub's IP (192.30.252.0/22)"
+            echo "2. EC2 has a public IP"
+            echo "3. SSH service is running (sudo systemctl status sshd)"
+            exit 1
+          fi
+          echo "✅ EC2 is reachable!"
+
+      - name: Debug Secrets
+        run: |
+          echo "EC2_IP: ${{ secrets.EC2_IP }}"
+          echo "EC2_SSH_KEY length: ${#SECRET_SSH_KEY}" 
+          echo "First 10 chars of key: ${SECRET_SSH_KEY:0:10}"
+        env:
+          SECRET_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
 
       # 6. Deploy to EC2
       - name: Deploy to EC2
@@ -49,16 +66,11 @@ jobs:
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
+          timeout: 30s
+          script_timeout: 5m
           script: |
-            # Login to ECR on EC2
-            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | \
-              sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REPOSITORY | regex_replace('(:.*)?$','' }}
-            
-            # Pull and run the container
-            sudo docker stop my-app || true
-            sudo docker rm my-app || true
-            sudo docker pull ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
-            sudo docker run -d \
-              -p 80:8080 \
-              --name my-app \
-              ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+            # Use secrets.ECR_REPOSITORY (not env) for consistency
+            docker pull ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+            docker stop my-app || true
+            docker rm my-app || true
+            docker run -d -p 80:8080 --name my-app ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
