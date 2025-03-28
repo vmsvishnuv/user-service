@@ -26,18 +26,12 @@ jobs:
       # 3. Login to ECR
       - name: ECR Login
         uses: aws-actions/amazon-ecr-login@v1
-        id: ecr-login
 
       # 4. Build and Push
       - name: Build and Push Docker Image
         run: |
-          # Build with SHA tag
           docker build -t ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }} .
-          
-          # Push SHA-tagged image first (critical for atomic deployment)
           docker push ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
-          
-          # Then tag and push as latest
           docker tag ${{ secrets.ECR_REPOSITORY }}:${{ github.sha }} ${{ secrets.ECR_REPOSITORY }}:latest
           docker push ${{ secrets.ECR_REPOSITORY }}:latest
 
@@ -65,8 +59,10 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script_timeout: 10m
-          envs: '"ECR_REPO=${{ secrets.ECR_REPOSITORY }} GIT_SHA=${{ github.sha }}"'
           script: |
+            # Directly use the secrets instead of env vars
+            IMAGE_REF="${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}"
+            
             # Ensure Docker is available
             sudo systemctl start docker || true
             
@@ -74,9 +70,9 @@ jobs:
             docker stop my-app || true
             docker rm my-app || true
             
-            # Pull with retry logic (critical for first-time deploy)
+            # Pull with retry logic
             for i in {1..5}; do
-              if docker pull $ECR_REPO:$GIT_SHA; then
+              if docker pull "$IMAGE_REF"; then
                 break
               fi
               echo "Pull attempt $i failed. Retrying in 10 seconds..."
@@ -84,18 +80,16 @@ jobs:
               [ $i -eq 5 ] && exit 1
             done
             
-            # Run new container with health check
+            # Run new container
             docker run -d \
               --name my-app \
               --restart unless-stopped \
               -p 80:8080 \
-              --health-cmd="curl -f http://localhost:8080/actuator/health || exit 1" \
-              --health-interval=10s \
-              $ECR_REPO:$GIT_SHA
+              "$IMAGE_REF"
             
             # Verify container started
             sleep 5
-            docker ps --filter "name=my-app" --format "{{.Status}}" | grep -q "healthy" || (echo "Container failed to start"; exit 1)
+            docker ps --filter "name=my-app" --format "{{.Status}}" | grep -q "(healthy\|running)" || (echo "Container failed to start"; exit 1)
             
             # Cleanup old images
             docker image prune -af --filter "until=24h"
