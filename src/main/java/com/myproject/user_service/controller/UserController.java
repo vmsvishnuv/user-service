@@ -72,4 +72,10 @@ public class UserController {
         List<PurchaseOrdersDTO> result = userService.getOrdersForUser(userID);
         return result;
     }
+
+
+    @GetMapping("/hi")
+    public String getHi(){
+        return "Hellooooo";
+    }
 }
